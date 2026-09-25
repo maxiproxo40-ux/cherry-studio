@@ -2,11 +2,17 @@ import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const store = new Map<string, unknown>()
+const persistStore = new Map<string, unknown>()
 vi.mock('@data/CacheService', () => ({
   cacheService: {
     getCasual: vi.fn((key: string) => store.get(key)),
     setCasual: vi.fn((key: string, value: unknown) => {
       store.set(key, value)
+    }),
+    getPersist: vi.fn((key: string) => persistStore.get(key) ?? {}),
+    setPersist: vi.fn((key: string, value: unknown) => {
+      const prev = persistStore.get(key) ?? {}
+      persistStore.set(key, typeof value === 'function' ? value(prev) : value)
     })
   }
 }))
@@ -20,7 +26,49 @@ const item = (id: string, text: string) => ({ id, draft: draft(text), payload: p
 const persistedTexts = (key: string) => (store.get(key) as Array<{ draft: { text: string } }>).map((i) => i.draft.text)
 
 describe('useFollowupQueue', () => {
-  beforeEach(() => store.clear())
+  beforeEach(() => {
+    store.clear()
+    persistStore.clear()
+  })
+
+  it('restores the queue and paused state after a restart (window cache empty)', () => {
+    const first = renderHook(() =>
+      useFollowupQueue({ scopeKey: 's1', isFulfilled: false, markSeen: vi.fn(), onDrain: vi.fn() })
+    )
+    act(() => first.result.current.enqueue(draft('a'), payload('a')))
+    act(() => first.result.current.enqueue(draft('b'), payload('b')))
+    act(() => first.result.current.setPaused(true))
+    first.unmount()
+
+    store.clear() // simulate quitting: the per-window memory cache is gone, the persist tier is not
+
+    const { result } = renderHook(() =>
+      useFollowupQueue({ scopeKey: 's1', isFulfilled: false, markSeen: vi.fn(), onDrain: vi.fn() })
+    )
+    expect(result.current.items.map((i) => i.draft.text)).toEqual(['a', 'b'])
+    expect(result.current.paused).toBe(true)
+  })
+
+  it('drops a scope from the restart-safe copy once its queue is emptied', () => {
+    const { result } = renderHook(() =>
+      useFollowupQueue({ scopeKey: 's1', isFulfilled: false, markSeen: vi.fn(), onDrain: vi.fn() })
+    )
+    act(() => result.current.enqueue(draft('a'), payload('a')))
+    expect(Object.keys(persistStore.get('ui.composer.followup_queues') as object)).toEqual(['s1'])
+
+    act(() => result.current.removeId(result.current.items[0].id))
+    expect(persistStore.get('ui.composer.followup_queues')).toEqual({})
+  })
+
+  it('ignores restart-safe queues older than the persisted TTL', () => {
+    persistStore.set('ui.composer.followup_queues', {
+      s1: { items: [item('old', 'stale')], paused: false, updatedAt: Date.now() - 8 * 24 * 60 * 60 * 1000 }
+    })
+    const { result } = renderHook(() =>
+      useFollowupQueue({ scopeKey: 's1', isFulfilled: false, markSeen: vi.fn(), onDrain: vi.fn() })
+    )
+    expect(result.current.items).toEqual([])
+  })
 
   it('enqueues (storing draft + payload, persisting) and removeId dequeues', () => {
     const { result } = renderHook(() =>

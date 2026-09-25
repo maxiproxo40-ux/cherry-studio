@@ -294,6 +294,8 @@ vi.mock('@data/CacheService', () => ({
     getCasual: vi.fn(() => ''),
     hasCasual: vi.fn(() => false),
     setCasual: vi.fn(),
+    getPersist: vi.fn(() => ({})),
+    setPersist: vi.fn(),
     subscribe: vi.fn(() => () => {})
   }
 }))

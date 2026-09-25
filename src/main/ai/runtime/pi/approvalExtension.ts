@@ -36,12 +36,13 @@ import { type DispatchDecision, toolApprovalRegistry } from '@main/ai/toolApprov
 import { evaluateUserDataSqliteGuard, normalizePiNativePathInput } from '@main/ai/toolApproval/userDataSqliteGuard'
 import { canonicalizePathForContainment } from '@main/utils/file'
 import { rtkRewrite } from '@main/utils/rtk'
-import { PI_BUILTIN_TOOLS } from '@shared/ai/piBuiltinTools'
+import { PI_BUILTIN_TOOLS, PI_TOOL_EXEC_TOOL_NAME } from '@shared/ai/piBuiltinTools'
 import type { AgentPermissionMode } from '@shared/data/api/schemas/agents'
 import type { CherryToolMeta } from '@shared/data/types/uiParts'
 
 import type { AgentRuntimeEvent } from '../types'
 import { PI_TRANSPORT } from './piStreamAdapter'
+import { isSimpleToolExecCode } from './simpleToolExec'
 
 const logger = loggerService.withContext('PiApprovalExtension')
 
@@ -140,7 +141,12 @@ export function createPiToolAuthorizer(ctx: PiApprovalContext): PiToolAuthorizer
     }
 
     const mode = ctx.getPermissionMode() ?? 'default'
-    const approvalRequired = ctx.approvalRequiredTools.has(toolName)
+    // A `tool_exec` whose code only calls `tools.invoke` with literal arguments cannot do anything
+    // beyond those nested calls, and each nested call is authorized on its own by this same policy.
+    // Drop the always-prompt for that shape so the permission mode decides; any other code keeps it.
+    const approvalRequired =
+      ctx.approvalRequiredTools.has(toolName) &&
+      !(toolName === PI_TOOL_EXEC_TOOL_NAME && isSimpleToolExecCode(input.code))
     const bypass = mode === 'bypassPermissions' && !ctx.nonBypassableApprovalTools.has(toolName)
 
     // (3)/(4) bash-specific guards: block global installs, then rtk-rewrite in place. Both apply

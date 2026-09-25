@@ -293,6 +293,41 @@ describe('createPiApprovalExtension — policy + approval gate', () => {
     expect(emitted).toHaveLength(0)
   })
 
+  it('lets a literal-only tool_exec through in auto mode so the nested call policy decides', async () => {
+    const { handler, emitted } = buildGate({
+      getPermissionMode: () => 'auto',
+      approvalRequiredTools: new Set([PI_TOOL_EXEC_TOOL_NAME])
+    })
+    const code = 'return tools.invoke("mcp__browser__open", { url: "https://example.com/", timeout: 20000 });'
+    await expect(handler(toolEvent(PI_TOOL_EXEC_TOOL_NAME, { code }), extCtx)).resolves.toBeUndefined()
+    expect(emitted).toHaveLength(0)
+  })
+
+  it('still prompts for a literal-only tool_exec in default mode', async () => {
+    const { handler, emitted } = buildGate({ approvalRequiredTools: new Set([PI_TOOL_EXEC_TOOL_NAME]) })
+    const pending = handler(
+      toolEvent(PI_TOOL_EXEC_TOOL_NAME, { code: 'return tools.invoke("mcp__server__lookup", {})' }),
+      extCtx
+    )
+    await flush()
+    expect(emitted).toHaveLength(1)
+    toolApprovalRegistry.dispatch(emitted[0].request.approvalId, { approved: false })
+    await expect(pending).resolves.toMatchObject({ block: true })
+  })
+
+  it('keeps the approval prompt for tool_exec code that does more than call tools', async () => {
+    const { handler, emitted } = buildGate({
+      getPermissionMode: () => 'auto',
+      approvalRequiredTools: new Set([PI_TOOL_EXEC_TOOL_NAME])
+    })
+    const code = 'const fs = require("node:fs"); return fs.readdirSync("/")'
+    const pending = handler(toolEvent(PI_TOOL_EXEC_TOOL_NAME, { code }), extCtx)
+    await flush()
+    expect(emitted).toHaveLength(1)
+    toolApprovalRegistry.dispatch(emitted[0].request.approvalId, { approved: false })
+    await expect(pending).resolves.toMatchObject({ block: true })
+  })
+
   it('still blocks a global install under bypassPermissions — it protects the shared cross-agent environment', async () => {
     const { handler, emitted } = buildGate({ getPermissionMode: () => 'bypassPermissions' })
     await expect(handler(toolEvent('bash', { command: 'npm install -g cowsay' }), extCtx)).resolves.toMatchObject({

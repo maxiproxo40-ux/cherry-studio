@@ -428,6 +428,10 @@ export type RendererPersistCacheSchema = {
   'ui.chat.resource_pane.width': number
   // Recent composer inputs shared by chat and agent surfaces (MRU order, capped by the consumer)
   'ui.composer.input_history': string[]
+  // Composer follow-up queues per conversation scope (`${topicId}:${assistantId}`), persisted so
+  // queued messages survive an app restart. `items` holds the renderer's FollowupQueueItem shape;
+  // entries older than the consumer's TTL are pruned on the next write.
+  'ui.composer.followup_queues': Record<string, { items: unknown[]; paused: boolean; updatedAt: number }>
   'ui.chat.last_used_assistant_id': string | null
   'ui.chat.last_used_topic_id': string | null
   // Per-surface classic-layout right-pane override. Null delegates to the page's position-derived
@@ -491,6 +495,7 @@ export const DefaultRendererPersistCache: RendererPersistCacheSchema = {
   'ui.chat.artifact_pane.width': 460,
   'ui.chat.resource_pane.width': 275, // keep in sync with 'ui.chat.sidebar.width'
   'ui.composer.input_history': [],
+  'ui.composer.followup_queues': {},
   'ui.chat.last_used_assistant_id': null,
   'ui.chat.last_used_topic_id': null,
   'ui.chat.right_pane_open_override': null,

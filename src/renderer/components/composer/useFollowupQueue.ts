@@ -18,14 +18,48 @@ const QUEUE_TTL = 24 * 60 * 60 * 1000
 const keyFor = (scopeKey: string) => `followup-queue.${scopeKey}`
 const pausedKeyFor = (scopeKey: string) => `followup-queue-paused.${scopeKey}`
 
-/** Load + validate a persisted queue (the cache holds arbitrary JSON; guard non-array entries). */
+/** Restart-safe mirror of every scope's queue (localStorage-backed persist tier). A queued message
+ *  is user input the user expects to be sent, so it must survive quitting and reopening the app. */
+const PERSISTED_QUEUES_KEY = 'ui.composer.followup_queues'
+const PERSISTED_QUEUE_TTL = 7 * 24 * 60 * 60 * 1000
+
+type PersistedQueueEntry = { items: unknown[]; paused: boolean; updatedAt: number }
+
+function loadPersistedEntry(scopeKey: string): PersistedQueueEntry | undefined {
+  const entry = cacheService.getPersist(PERSISTED_QUEUES_KEY)?.[scopeKey]
+  if (!entry || Date.now() - entry.updatedAt > PERSISTED_QUEUE_TTL) return undefined
+  return entry
+}
+
+function savePersistedEntry(scopeKey: string, patch: { items?: FollowupQueueItem[]; paused?: boolean }): void {
+  cacheService.setPersist(PERSISTED_QUEUES_KEY, (prev) => {
+    const now = Date.now()
+    const next: Record<string, PersistedQueueEntry> = {}
+    for (const [key, entry] of Object.entries(prev ?? {})) {
+      if (key !== scopeKey && now - entry.updatedAt <= PERSISTED_QUEUE_TTL) next[key] = entry
+    }
+    const current = prev?.[scopeKey]
+    const items = patch.items ?? current?.items ?? []
+    const paused = patch.paused ?? current?.paused ?? false
+    // Drop empty, unpaused scopes so the stored blob only holds queues that still matter.
+    if (items.length > 0 || paused) next[scopeKey] = { items: [...items], paused, updatedAt: now }
+    return next
+  })
+}
+
+/** Load + validate a queue: this window's memory cache first, then the restart-safe copy (the
+ *  caches hold arbitrary JSON; guard non-array entries). */
 function loadQueue(scopeKey: string): FollowupQueueItem[] {
   const cached = cacheService.getCasual<FollowupQueueItem[]>(keyFor(scopeKey))
-  return Array.isArray(cached) ? cached : []
+  if (Array.isArray(cached)) return cached
+  const persisted = loadPersistedEntry(scopeKey)?.items
+  return Array.isArray(persisted) ? (persisted as FollowupQueueItem[]) : []
 }
 
 function loadPaused(scopeKey: string): boolean {
-  return cacheService.getCasual<boolean>(pausedKeyFor(scopeKey)) === true
+  const cached = cacheService.getCasual<boolean>(pausedKeyFor(scopeKey))
+  if (typeof cached === 'boolean') return cached
+  return loadPersistedEntry(scopeKey)?.paused === true
 }
 
 interface UseFollowupQueueParams {
@@ -53,8 +87,9 @@ export interface FollowupQueueController {
 /**
  * Per-conversation FIFO queue of follow-up drafts. While a turn streams the composer enqueues here
  * instead of sending; on the live→idle edge the head auto-drains (one per completion), and the dock
- * lets the user steer/edit/remove individual items or pause auto-drain. Persistence mirrors the
- * draft cache (per-window memory + TTL); this queue remains on the casual cache API.
+ * lets the user steer/edit/remove individual items or pause auto-drain. Each change is written to
+ * the per-window memory cache (same tier + TTL as the draft cache) and mirrored to the persist tier,
+ * so a queue survives an app restart and reloads from there when the window cache is empty.
  */
 export function useFollowupQueue({
   scopeKey,
@@ -77,6 +112,7 @@ export function useFollowupQueue({
 
   const persist = useCallback((next: FollowupQueueItem[]) => {
     cacheService.setCasual(keyFor(scopeKeyRef.current), next, QUEUE_TTL)
+    savePersistedEntry(scopeKeyRef.current, { items: next })
   }, [])
 
   // Reload when switching conversations; the previous queue stays in its own scoped cache entry.
@@ -89,6 +125,7 @@ export function useFollowupQueue({
 
   const setPaused = useCallback((nextPaused: boolean) => {
     cacheService.setCasual(pausedKeyFor(scopeKeyRef.current), nextPaused)
+    savePersistedEntry(scopeKeyRef.current, { paused: nextPaused })
     setPausedState(nextPaused)
   }, [])
 
