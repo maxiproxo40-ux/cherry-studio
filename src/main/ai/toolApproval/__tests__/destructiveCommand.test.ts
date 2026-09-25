@@ -30,7 +30,18 @@ describe('detectDestructiveCommand', () => {
     'cat ~/.ssh/config',
     "sed -i '' 's/a/b/' ~/.zshrc",
     'echo export X=1 >> $HOME/.zshrc',
-    'cp dist/app ${HOME}/bin/app'
+    'cp dist/app ${HOME}/bin/app',
+    'del /q build\\app.js',
+    'erase notes.txt',
+    'rd /s /q dist',
+    'Remove-Item -Recurse -Force dist',
+    'ri dist -Recurse',
+    'powershell -Command "Remove-Item -Recurse dist"',
+    'pwsh.exe -c "rm dist -r"',
+    'cmd /c del /q build',
+    'unlink old.txt',
+    'git push',
+    'git push origin main'
   ])('flags %s', (command) => {
     expect(detectDestructiveCommand(command)).not.toBeNull()
   })
@@ -62,6 +73,9 @@ describe('detectDestructiveCommand', () => {
     // Unstaging keeps the edits on disk, so it is recoverable.
     'git restore --staged file.ts',
     'mv old.txt new.txt',
+    'powershell -Command "Get-ChildItem"',
+    'cmd /c dir',
+    'git pull',
     // The home directory is only a target when it is used as a path; mentioning the variable is not.
     'echo $HOME',
     "rg '\\$HOME' src",

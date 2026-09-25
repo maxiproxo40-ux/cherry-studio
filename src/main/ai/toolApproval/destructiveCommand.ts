@@ -19,6 +19,12 @@ const WRAPPERS = new Set(['time', 'nohup', 'env', 'command', 'exec', 'builtin', 
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'ksh', 'dash', 'fish'])
 /** Service-manager subcommands that only report state (`list-units`, `is-system-running`, …). */
 const READ_ONLY_SERVICE_ARG = /(?:^|\s)(?:status|list[\w-]*|show|is-[\w-]+|cat|print|-l|--status-all)(?:\s|$)/
+/** Windows deletion commands (cmd built-ins and PowerShell cmdlets / aliases), lowercased. */
+const WINDOWS_DELETE_COMMANDS = new Set(['del', 'erase', 'rd', 'remove-item', 'ri'])
+const WINDOWS_SHELLS = new Set(['powershell', 'pwsh', 'cmd'])
+const WINDOWS_DELETE_IN_TEXT = /(?:^|[\s;"'&|(])(?:remove-item|del|erase|rd|rmdir|rm|ri)(?=[\s;"')]|$)/i
+const stripExe = (command: string) => command.replace(/\.exe$/, '')
+const unlinkCommand = (command: string) => command === 'unlink'
 /** `git restore --staged` only unstages; adding `--worktree` makes it discard edits again. */
 const GIT_RESTORE_UNSTAGE_ONLY = /\s--staged\b/
 
@@ -40,6 +46,15 @@ const RULES: Array<{ test: (stage: Stage) => boolean; reason: string }> = [
     reason: 'directory or secure deletion'
   },
   {
+    // Windows deletion: cmd built-ins, PowerShell cmdlets/aliases, and either shell invoked inline
+    // (`powershell -Command "Remove-Item …"`, `cmd /c del …`).
+    test: (s) =>
+      WINDOWS_DELETE_COMMANDS.has(stripExe(s.command)) ||
+      unlinkCommand(s.command) ||
+      (WINDOWS_SHELLS.has(stripExe(s.command)) && WINDOWS_DELETE_IN_TEXT.test(s.text)),
+    reason: 'file deletion (Windows)'
+  },
+  {
     test: (s) => (s.command === 'find' || s.command === 'fd') && /(?:^|\s)(?:-delete\b|-exec\s+rm\b)/.test(s.text),
     reason: 'bulk deletion through find'
   },
@@ -56,11 +71,10 @@ const RULES: Array<{ test: (stage: Stage) => boolean; reason: string }> = [
       if (/\srestore\b/.test(s.text)) {
         return !GIT_RESTORE_UNSTAGE_ONLY.test(s.text) || /\s--worktree\b/.test(s.text)
       }
-      return /\s(?:clean\b.*\s-[a-zA-Z]*[fx]|reset\s+--hard|checkout\s+(?:--\s|\.(?:\s|$))|push\b.*--force)/.test(
-        s.text
-      )
+      return /\s(?:clean\b.*\s-[a-zA-Z]*[fx]|reset\s+--hard|checkout\s+(?:--\s|\.(?:\s|$))|push\b)/.test(s.text)
     },
-    reason: 'destructive git operation'
+    // Any `git push` publishes work (and can deploy), so it always asks — not only `--force`.
+    reason: 'destructive git operation or push'
   },
   {
     test: (s) => s.command === 'truncate',
