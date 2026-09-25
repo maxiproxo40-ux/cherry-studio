@@ -26,6 +26,7 @@ import { formatErrorMessage } from '@renderer/utils/error'
 import { isValidProxyUrl } from '@renderer/utils/url'
 import { isNonChatModel } from '@shared/utils/model'
 
+import AgentToolApprovalSettings from './AgentToolApprovalSettings'
 import { ContextManagementSettings } from './ContextManagementSettings'
 
 const defaultByPassRules = 'localhost,127.0.0.1,::1'
@@ -268,6 +269,8 @@ const GeneralSettings: FC = () => {
           </div>
         </SettingRow>
       </SettingGroup>
+
+      <AgentToolApprovalSettings />
 
       <SettingGroup theme={theme}>
         <SettingRow id="setting-general-retry-enabled" className="scroll-mt-6 items-start gap-6">

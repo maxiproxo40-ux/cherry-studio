@@ -13,6 +13,20 @@
       "description": "Let the Claude Code runtime append its own attribution to git commits and PR bodies (Co-Authored-By trailer, Generated-with footer). Disable to omit that attribution (v2 new feature, no v1 source)"
     },
     {
+      "targetKey": "agent.tool_approval.always_allowed_tools",
+      "type": "string[]",
+      "defaultValue": [],
+      "status": "classified",
+      "description": "Agent tool names that never ask for approval in any agent or project, set by \"Allow always\" or in Settings (custom build, no v1 source)"
+    },
+    {
+      "targetKey": "agent.tool_approval.allowed_command_prefixes",
+      "type": "string[]",
+      "defaultValue": [],
+      "status": "classified",
+      "description": "Shell command prefixes an agent may run without approval, e.g. \"git status\" or \"npm run\"; destructive commands still ask (custom build, no v1 source)"
+    },
+    {
       "targetKey": "app.browser.agent_control.enabled",
       "type": "boolean",
       "defaultValue": true,

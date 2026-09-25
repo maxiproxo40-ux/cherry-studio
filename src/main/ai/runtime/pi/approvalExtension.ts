@@ -90,9 +90,12 @@ export interface PiApprovalContext {
   approvalRequiredTools: ReadonlySet<string>
   /** Delegation tools whose live-approval ceiling remains in Full Access. */
   nonBypassableApprovalTools: ReadonlySet<string>
-  /** Tools the user approved with "Allow always" in this session; later calls skip the prompt
-   *  (a destructive-looking bash command still asks). Mutated by the authorizer. */
-  sessionAllowedTools?: Set<string>
+  /** User allowlist (global Settings): tool names that never prompt. Read at fire-time. */
+  getAlwaysAllowedTools?: () => readonly string[]
+  /** User allowlist (global Settings): shell command prefixes that never prompt. Read at fire-time. */
+  getAllowedCommandPrefixes?: () => readonly string[]
+  /** Persist an "Allow always" choice into the global allowlist. */
+  rememberAlwaysAllowedTool?: (toolName: string) => void
 }
 
 export function createPiApprovalExtension(ctx: PiApprovalContext): ExtensionFactory {
@@ -178,15 +181,9 @@ export function createPiToolAuthorizer(ctx: PiApprovalContext): PiToolAuthorizer
     // exception: its one-hop live-approval ceiling must hold in every permission mode.
     if (bypass) return
 
-    // "Allow always" from an earlier prompt in this session. Delegation tools keep their live
-    // approval, and a destructive-looking shell command still asks even after bash was allowed.
-    if (
-      ctx.sessionAllowedTools?.has(toolName) &&
-      !ctx.nonBypassableApprovalTools.has(toolName) &&
-      !(toolName === 'bash' && detectDestructiveCommand(typeof input.command === 'string' ? input.command : ''))
-    ) {
-      return
-    }
+    // The user's global allowlist ("Allow always" / Settings). Delegation tools keep their live
+    // approval, and a destructive-looking shell command still asks whatever the allowlist says.
+    if (!ctx.nonBypassableApprovalTools.has(toolName) && isAllowedByUserRules(ctx, toolName, input)) return
 
     // (6) approval by permission mode. Cherry-owned soul/autonomy tools are auto-approved in every
     // mode first (unattended heartbeat turns must not block on a renderer prompt). The disabledTools
@@ -255,11 +252,46 @@ export function createPiToolAuthorizer(ctx: PiApprovalContext): PiToolAuthorizer
       return { block: true, reason: decision.reason ?? 'User denied permission for this tool.' }
     }
     if (decision.alwaysAllow && !ctx.nonBypassableApprovalTools.has(toolName)) {
-      ctx.sessionAllowedTools?.add(toolName)
+      ctx.rememberAlwaysAllowedTool?.(toolName)
     }
     if (decision.updatedInput) applyInputEdit(input, decision.updatedInput)
     return
   }
+}
+
+/** Shell syntax that can hide another command inside an allowed one (`git log $(rm …)`). */
+const COMMAND_SUBSTITUTION = /`|\$\(|<\(|>\(/
+
+/**
+ * Whether the user's global allowlist lets this call run without a prompt. A tool name in the
+ * always-allowed list covers every call of that tool; for bash, a command is also allowed when each
+ * of its `&&`/`||`/`;`/`|` segments starts with an allowed prefix. A destructive-looking or
+ * substitution-bearing command is never allowed here.
+ */
+export function isAllowedByUserRules(
+  ctx: Pick<PiApprovalContext, 'getAlwaysAllowedTools' | 'getAllowedCommandPrefixes'>,
+  toolName: string,
+  input: Record<string, unknown>
+): boolean {
+  // Case-insensitive: the prompt shows humanized names ("Read") for pi's lowercase tools ("read").
+  const alwaysAllowed = (ctx.getAlwaysAllowedTools?.() ?? []).map((name) => name.trim().toLowerCase())
+  if (toolName !== 'bash') return alwaysAllowed.includes(toolName.toLowerCase())
+
+  const command = typeof input.command === 'string' ? input.command.trim() : ''
+  if (!command || detectDestructiveCommand(command) !== null) return false
+  if (alwaysAllowed.includes('bash')) return true
+  if (COMMAND_SUBSTITUTION.test(command)) return false
+
+  const prefixes = (ctx.getAllowedCommandPrefixes?.() ?? []).map((prefix) => prefix.trim()).filter(Boolean)
+  if (prefixes.length === 0) return false
+  const segments = command
+    .split(/&&|\|\||[;\n|]/)
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+  return (
+    segments.length > 0 &&
+    segments.every((segment) => prefixes.some((prefix) => segment === prefix || segment.startsWith(`${prefix} `)))
+  )
 }
 
 /** Whether a tool must surface an approval request under the given mode. */

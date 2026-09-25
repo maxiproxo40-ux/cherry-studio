@@ -26,6 +26,14 @@ vi.mock('@renderer/components/ModelSelector', () => ({
   ModelSelector: ({ trigger }: { trigger: ReactNode }) => trigger
 }))
 
+vi.mock('../AgentToolApprovalSettings', () => ({
+  default: () => (
+    <section>
+      <h2>settings.agent.tool_approval.title</h2>
+    </section>
+  )
+}))
+
 vi.mock('../ContextManagementSettings', () => ({
   ContextManagementSettings: () => (
     <section>
@@ -130,6 +138,7 @@ describe('GeneralSettings', () => {
       'settings.proxy.mode.title',
       'settings.models.context_management.title',
       'settings.agent.language.title',
+      'settings.agent.tool_approval.title',
       'settings.developer.title'
     ])
   })

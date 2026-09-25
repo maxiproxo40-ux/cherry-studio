@@ -138,17 +138,21 @@ const PI_NON_BYPASSABLE_APPROVAL_TOOLS = new Set(
   )
 )
 
-/** Tools approved with "Allow always", per agent session. Kept outside the connection so the choice
- *  survives warm-connection rebuilds; cleared only when the app restarts. */
-const SESSION_ALLOWED_TOOLS = new Map<string, Set<string>>()
+const ALWAYS_ALLOWED_TOOLS_KEY = 'agent.tool_approval.always_allowed_tools'
+const ALLOWED_COMMAND_PREFIXES_KEY = 'agent.tool_approval.allowed_command_prefixes'
 
-function getSessionAllowedTools(sessionId: string): Set<string> {
-  let tools = SESSION_ALLOWED_TOOLS.get(sessionId)
-  if (!tools) {
-    tools = new Set()
-    SESSION_ALLOWED_TOOLS.set(sessionId, tools)
+/** Global tool-approval allowlist shared by every agent and project (Settings → General). */
+const userToolAllowlist = {
+  getAlwaysAllowedTools: () => application.get('PreferenceService').get(ALWAYS_ALLOWED_TOOLS_KEY) ?? [],
+  getAllowedCommandPrefixes: () => application.get('PreferenceService').get(ALLOWED_COMMAND_PREFIXES_KEY) ?? [],
+  rememberAlwaysAllowedTool: (toolName: string) => {
+    const preferences = application.get('PreferenceService')
+    const current = preferences.get(ALWAYS_ALLOWED_TOOLS_KEY) ?? []
+    if (current.includes(toolName)) return
+    void preferences.set(ALWAYS_ALLOWED_TOOLS_KEY, [...current, toolName]).catch((error: unknown) => {
+      logger.warn('Failed to remember an always-allowed tool', { toolName, error })
+    })
   }
-  return tools
 }
 
 function mergePiBashExecutionEnv(env: NodeJS.ProcessEnv): Record<string, string> {
@@ -353,7 +357,7 @@ export class PiRuntimeConnection implements AgentRuntimeConnection {
         autoApprovedTools: PI_AUTO_APPROVED_MCP_TOOLS,
         approvalRequiredTools: PI_APPROVAL_REQUIRED_TOOLS,
         nonBypassableApprovalTools: PI_NON_BYPASSABLE_APPROVAL_TOOLS,
-        sessionAllowedTools: getSessionAllowedTools(this.input.sessionId)
+        ...userToolAllowlist
       }
       const authorizeTool = createPiToolAuthorizer(approvalContext)
       const resourceLoader = new pi.DefaultResourceLoader({

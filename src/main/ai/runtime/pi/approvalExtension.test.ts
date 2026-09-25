@@ -20,7 +20,7 @@ vi.mock('@logger', () => ({
 }))
 vi.mock('@main/utils/rtk', () => ({ rtkRewrite: mocks.rtkRewrite }))
 
-const { createPiApprovalExtension, createPiToolAuthorizer } = await import('./approvalExtension')
+const { createPiApprovalExtension, createPiToolAuthorizer, isAllowedByUserRules } = await import('./approvalExtension')
 const { toolApprovalRegistry } = await import('@main/ai/toolApproval/ToolApprovalRegistry')
 
 type Handler = (event: unknown, ctx: unknown) => Promise<{ block?: boolean; reason?: string } | undefined>
@@ -69,7 +69,9 @@ function buildGate(
     autoApprovedTools: ReadonlySet<string>
     approvalRequiredTools: ReadonlySet<string>
     nonBypassableApprovalTools: ReadonlySet<string>
-    sessionAllowedTools: Set<string>
+    getAlwaysAllowedTools: () => readonly string[]
+    getAllowedCommandPrefixes: () => readonly string[]
+    rememberAlwaysAllowedTool: (toolName: string) => void
   }> = {}
 ) {
   const emitted: any[] = []
@@ -329,35 +331,38 @@ describe('createPiApprovalExtension — policy + approval gate', () => {
     await expect(pending).resolves.toMatchObject({ block: true })
   })
 
-  it('stops asking for a tool after "Allow always" for the rest of the session', async () => {
-    const sessionAllowedTools = new Set<string>()
+  it('remembers "Allow always" globally and stops asking for that tool', async () => {
+    const allowed: string[] = []
     const toolName = 'mcp__server__lookup'
-    const { handler, emitted } = buildGate({ sessionAllowedTools })
+    const { handler, emitted } = buildGate({
+      getAlwaysAllowedTools: () => allowed,
+      rememberAlwaysAllowedTool: (name) => allowed.push(name)
+    })
 
     const pending = handler(toolEvent(toolName, {}), extCtx)
     await flush()
     expect(emitted).toHaveLength(1)
     toolApprovalRegistry.dispatch(emitted[0].request.approvalId, { approved: true, alwaysAllow: true })
     await expect(pending).resolves.toBeUndefined()
-    expect(sessionAllowedTools.has(toolName)).toBe(true)
+    expect(allowed).toEqual([toolName])
 
     await expect(handler(toolEvent(toolName, {}), extCtx)).resolves.toBeUndefined()
     expect(emitted).toHaveLength(1)
   })
 
-  it('keeps prompting for a plain Allow', async () => {
-    const sessionAllowedTools = new Set<string>()
-    const { handler, emitted } = buildGate({ sessionAllowedTools })
+  it('does not remember a plain Allow', async () => {
+    const rememberAlwaysAllowedTool = vi.fn()
+    const { handler, emitted } = buildGate({ rememberAlwaysAllowedTool })
 
     const pending = handler(toolEvent('bash', { command: 'ls' }), extCtx)
     await flush()
     toolApprovalRegistry.dispatch(emitted[0].request.approvalId, { approved: true })
     await expect(pending).resolves.toBeUndefined()
-    expect(sessionAllowedTools.size).toBe(0)
+    expect(rememberAlwaysAllowedTool).not.toHaveBeenCalled()
   })
 
   it('still asks for a destructive command after bash was allowed always', async () => {
-    const { handler, emitted } = buildGate({ sessionAllowedTools: new Set(['bash']) })
+    const { handler, emitted } = buildGate({ getAlwaysAllowedTools: () => ['bash'] })
 
     await expect(handler(toolEvent('bash', { command: 'ls -la' }), extCtx)).resolves.toBeUndefined()
     expect(emitted).toHaveLength(0)
@@ -367,6 +372,16 @@ describe('createPiApprovalExtension — policy + approval gate', () => {
     expect(emitted).toHaveLength(1)
     toolApprovalRegistry.dispatch(emitted[0].request.approvalId, { approved: false })
     await expect(pending).resolves.toMatchObject({ block: true })
+  })
+
+  it('lets always-allowed tools skip the always-prompt list (tool_exec)', async () => {
+    const { handler, emitted } = buildGate({
+      approvalRequiredTools: new Set([PI_TOOL_EXEC_TOOL_NAME]),
+      getAlwaysAllowedTools: () => [PI_TOOL_EXEC_TOOL_NAME]
+    })
+    const code = 'var x = 1; return x'
+    await expect(handler(toolEvent(PI_TOOL_EXEC_TOOL_NAME, { code }), extCtx)).resolves.toBeUndefined()
+    expect(emitted).toHaveLength(0)
   })
 
   it('still blocks a global install under bypassPermissions — it protects the shared cross-agent environment', async () => {
@@ -742,4 +757,41 @@ describe('Browser control permission', () => {
       await expect(call()).resolves.toMatchObject({ block: true })
     }
   )
+})
+
+describe('isAllowedByUserRules', () => {
+  const rules = (tools: string[], prefixes: string[]) => ({
+    getAlwaysAllowedTools: () => tools,
+    getAllowedCommandPrefixes: () => prefixes
+  })
+
+  it.each([
+    ['git status', ['git status']],
+    ['git status --short', ['git status']],
+    ['npm run build && npm run test', ['npm run']],
+    ['git log --oneline | head -5', ['git log', 'head']]
+  ])('allows %s when every segment matches a prefix', (command, prefixes) => {
+    expect(isAllowedByUserRules(rules([], prefixes), 'bash', { command })).toBe(true)
+  })
+
+  it.each([
+    ['git statusx', ['git status']],
+    ['npm run build && curl http://x', ['npm run']],
+    ['npm run build $(rm -rf ~)', ['npm run']],
+    ['npm run `whoami`', ['npm run']],
+    ['rm -rf dist', ['rm']],
+    ['git push', []]
+  ])('rejects %s', (command, prefixes) => {
+    expect(isAllowedByUserRules(rules([], prefixes), 'bash', { command })).toBe(false)
+  })
+
+  it('matches tool names case-insensitively', () => {
+    expect(isAllowedByUserRules(rules(['Read'], []), 'read', {})).toBe(true)
+    expect(isAllowedByUserRules(rules(['Bash'], []), 'bash', { command: 'ls' })).toBe(true)
+  })
+
+  it('matches non-bash tools by exact name only', () => {
+    expect(isAllowedByUserRules(rules(['mcp__browser__open'], []), 'mcp__browser__open', {})).toBe(true)
+    expect(isAllowedByUserRules(rules(['mcp__browser__open'], []), 'mcp__browser__snapshot', {})).toBe(false)
+  })
 })
