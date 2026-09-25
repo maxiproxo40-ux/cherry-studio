@@ -1,0 +1,48 @@
+name: Custom Windows Build
+
+# Builds an unsigned Windows x64 installer + portable exe from this fork's custom branch.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - custom/**
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v7
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: ".node-version"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Install Dependencies
+        run: pnpm install
+
+      - name: Build Windows x64
+        run: |
+          pnpm run build
+          pnpm exec electron-builder --win --x64 --publish never
+        env:
+          ELECTRON_BUILDER_7Z_FILTER: BCJ
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: cherry-studio-custom-win-x64
+          path: |
+            dist/*-setup.exe
+            dist/*-portable.exe
+          retention-days: 14
