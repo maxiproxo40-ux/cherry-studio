@@ -332,7 +332,9 @@ export class PiRuntimeConnection implements AgentRuntimeConnection {
           application.get('AgentSessionRuntimeService').getInteractionState(this.input.sessionId),
         getPermissionMode: () => this.permissionMode,
         isDisabled: (toolName: string) => this.disabledTools.has(toolName),
-        additionalReadOnlyRoots: additionalSkillPaths,
+        // Cherry's managed file store holds the attachments the user adds to the conversation, so the
+        // agent may read them without a prompt. Read-only: edit/write tools do not inherit these roots.
+        additionalReadOnlyRoots: [...additionalSkillPaths, application.getPath('feature.files.data')],
         // Safe first-party MCP tools may run headlessly; third-party and mutating tools still prompt.
         // disabledTools hard-blocks every class at fire-time.
         autoApprovedTools: PI_AUTO_APPROVED_MCP_TOOLS,
