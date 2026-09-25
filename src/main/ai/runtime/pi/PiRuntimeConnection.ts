@@ -566,9 +566,10 @@ export class PiRuntimeConnection implements AgentRuntimeConnection {
     const { agent } = snapshot
 
     const nextPermissionMode = agent.configuration?.permission_mode ?? 'default'
-    // Changing the permission mode can alter admission for the current tool loop, so defer it until
-    // pi is idle. Disabled tools only tighten policy and still apply immediately below.
-    const applicablePermissionMode = this.session?.isStreaming ? this.permissionMode : nextPermissionMode
+    // The permission mode applies immediately, even mid-turn: the approval gate reads it per tool call,
+    // so switching mode while an agent works takes effect on its next tool call instead of after the
+    // whole (possibly long) turn. Disabled tools only tighten policy and also apply immediately below.
+    const applicablePermissionMode = nextPermissionMode
     const nextDisabledTools = normalizeDisabledTools(agent.disabledTools)
     const applicableDisabledTools = this.session?.isStreaming
       ? new Set([...this.disabledTools, ...nextDisabledTools])

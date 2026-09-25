@@ -1757,7 +1757,7 @@ describe('PiRuntimeConnection', () => {
     expect(toolApprovalRegistry.size()).toBe(0)
   })
 
-  it('defers a permission-mode change while streaming and applies it once idle', async () => {
+  it('applies a permission-mode change immediately, even while streaming', async () => {
     const conn = await new PiRuntimeConnection(input).start()
     mocks.isStreaming = true
     mocks.getAgent.mockReturnValue({
@@ -1767,18 +1767,11 @@ describe('PiRuntimeConnection', () => {
       configuration: { permission_mode: 'bypassPermissions' }
     })
 
-    await expect(conn.reconcile({ modelId: 'p::m' })).resolves.toBe('current')
+    await expect(conn.reconcile({ modelId: 'p::m' })).resolves.toBe('patched')
 
     const handler = approvalGateHandler()
-    void handler({ type: 'tool_call', toolName: 'bash', toolCallId: 'tc-active', input: { command: 'ls' } }, {})
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(toolApprovalRegistry.size()).toBe(1)
-    toolApprovalRegistry.abort(SESSION_ID, 'test-boundary')
-
-    mocks.isStreaming = false
-    await expect(conn.reconcile({ modelId: 'p::m' })).resolves.toBe('patched')
     await expect(
-      handler({ type: 'tool_call', toolName: 'bash', toolCallId: 'tc-idle', input: { command: 'ls' } }, {})
+      handler({ type: 'tool_call', toolName: 'bash', toolCallId: 'tc-active', input: { command: 'ls' } }, {})
     ).resolves.toBeUndefined()
     expect(toolApprovalRegistry.size()).toBe(0)
   })
