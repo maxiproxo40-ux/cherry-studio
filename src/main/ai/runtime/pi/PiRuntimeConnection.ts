@@ -138,6 +138,19 @@ const PI_NON_BYPASSABLE_APPROVAL_TOOLS = new Set(
   )
 )
 
+/** Tools approved with "Allow always", per agent session. Kept outside the connection so the choice
+ *  survives warm-connection rebuilds; cleared only when the app restarts. */
+const SESSION_ALLOWED_TOOLS = new Map<string, Set<string>>()
+
+function getSessionAllowedTools(sessionId: string): Set<string> {
+  let tools = SESSION_ALLOWED_TOOLS.get(sessionId)
+  if (!tools) {
+    tools = new Set()
+    SESSION_ALLOWED_TOOLS.set(sessionId, tools)
+  }
+  return tools
+}
+
 function mergePiBashExecutionEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   const definedEnv = Object.fromEntries(
     Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)
@@ -339,7 +352,8 @@ export class PiRuntimeConnection implements AgentRuntimeConnection {
         // disabledTools hard-blocks every class at fire-time.
         autoApprovedTools: PI_AUTO_APPROVED_MCP_TOOLS,
         approvalRequiredTools: PI_APPROVAL_REQUIRED_TOOLS,
-        nonBypassableApprovalTools: PI_NON_BYPASSABLE_APPROVAL_TOOLS
+        nonBypassableApprovalTools: PI_NON_BYPASSABLE_APPROVAL_TOOLS,
+        sessionAllowedTools: getSessionAllowedTools(this.input.sessionId)
       }
       const authorizeTool = createPiToolAuthorizer(approvalContext)
       const resourceLoader = new pi.DefaultResourceLoader({

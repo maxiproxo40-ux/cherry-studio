@@ -182,6 +182,8 @@ export interface MessageToolApprovalInput {
   approved: boolean
   reason?: string
   updatedInput?: Record<string, unknown>
+  /** "Allow always": stop asking for this tool for the rest of the agent session. */
+  alwaysAllow?: boolean
 }
 
 export interface MessageErrorDetailInput {

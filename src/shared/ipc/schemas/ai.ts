@@ -309,6 +309,7 @@ export const aiRequestSchemas = {
       approved: z.boolean(),
       reason: z.string().optional(),
       updatedInput: z.record(z.string(), z.unknown()).optional(),
+      alwaysAllow: z.boolean().optional(),
       topicId: z.string().optional(),
       anchorId: z.string().optional()
     }) satisfies z.ZodType<AiToolApprovalRespondRequest>,

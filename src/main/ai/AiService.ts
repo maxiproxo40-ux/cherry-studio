@@ -433,7 +433,8 @@ export class AiService extends BaseService {
       {
         approved: payload.approved,
         reason: payload.reason,
-        updatedInput: payload.updatedInput
+        updatedInput: payload.updatedInput,
+        ...(payload.alwaysAllow && { alwaysAllow: true })
       },
       payload.anchorId
     )

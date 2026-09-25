@@ -69,6 +69,7 @@ function buildGate(
     autoApprovedTools: ReadonlySet<string>
     approvalRequiredTools: ReadonlySet<string>
     nonBypassableApprovalTools: ReadonlySet<string>
+    sessionAllowedTools: Set<string>
   }> = {}
 ) {
   const emitted: any[] = []
@@ -322,6 +323,46 @@ describe('createPiApprovalExtension — policy + approval gate', () => {
     })
     const code = 'const fs = require("node:fs"); return fs.readdirSync("/")'
     const pending = handler(toolEvent(PI_TOOL_EXEC_TOOL_NAME, { code }), extCtx)
+    await flush()
+    expect(emitted).toHaveLength(1)
+    toolApprovalRegistry.dispatch(emitted[0].request.approvalId, { approved: false })
+    await expect(pending).resolves.toMatchObject({ block: true })
+  })
+
+  it('stops asking for a tool after "Allow always" for the rest of the session', async () => {
+    const sessionAllowedTools = new Set<string>()
+    const toolName = 'mcp__server__lookup'
+    const { handler, emitted } = buildGate({ sessionAllowedTools })
+
+    const pending = handler(toolEvent(toolName, {}), extCtx)
+    await flush()
+    expect(emitted).toHaveLength(1)
+    toolApprovalRegistry.dispatch(emitted[0].request.approvalId, { approved: true, alwaysAllow: true })
+    await expect(pending).resolves.toBeUndefined()
+    expect(sessionAllowedTools.has(toolName)).toBe(true)
+
+    await expect(handler(toolEvent(toolName, {}), extCtx)).resolves.toBeUndefined()
+    expect(emitted).toHaveLength(1)
+  })
+
+  it('keeps prompting for a plain Allow', async () => {
+    const sessionAllowedTools = new Set<string>()
+    const { handler, emitted } = buildGate({ sessionAllowedTools })
+
+    const pending = handler(toolEvent('bash', { command: 'ls' }), extCtx)
+    await flush()
+    toolApprovalRegistry.dispatch(emitted[0].request.approvalId, { approved: true })
+    await expect(pending).resolves.toBeUndefined()
+    expect(sessionAllowedTools.size).toBe(0)
+  })
+
+  it('still asks for a destructive command after bash was allowed always', async () => {
+    const { handler, emitted } = buildGate({ sessionAllowedTools: new Set(['bash']) })
+
+    await expect(handler(toolEvent('bash', { command: 'ls -la' }), extCtx)).resolves.toBeUndefined()
+    expect(emitted).toHaveLength(0)
+
+    const pending = handler(toolEvent('bash', { command: 'rm -rf build' }), extCtx)
     await flush()
     expect(emitted).toHaveLength(1)
     toolApprovalRegistry.dispatch(emitted[0].request.approvalId, { approved: false })

@@ -32,12 +32,15 @@ function isHandledElsewhere(event: KeyboardEvent) {
 type PermissionRequestComposerProps = {
   request: PermissionRequestComposerRequest
   onRespond: (input: MessageToolApprovalInput) => void | Promise<void>
+  /** Show an "Allow always" button that approves this tool for the rest of the session. */
+  allowAlways?: boolean
   className?: string
 }
 
 type PermissionRequestComposerOverrideOptions = {
   request: PermissionRequestComposerRequest
   onRespond: (input: MessageToolApprovalInput) => void | Promise<void>
+  allowAlways?: boolean
 }
 
 function isMcpToolResponse(toolResponse: ToolResponseLike): toolResponse is McpToolResponse {
@@ -74,13 +77,19 @@ function renderBuiltinPreviewChildren(toolName: string, children: ToolDisclosure
 
 export function createPermissionRequestComposerOverride({
   request,
-  onRespond
+  onRespond,
+  allowAlways
 }: PermissionRequestComposerOverrideOptions): ComposerOverride {
   return {
     id: `tool-permission:${request.approvalId}`,
     priority: 90,
     render: ({ className }) => (
-      <PermissionRequestComposer request={request} onRespond={onRespond} className={className} />
+      <PermissionRequestComposer
+        request={request}
+        onRespond={onRespond}
+        allowAlways={allowAlways}
+        className={className}
+      />
     )
   }
 }
@@ -158,7 +167,12 @@ function PermissionPreviewHeader({ toolName, description }: { toolName: string; 
   )
 }
 
-export default function PermissionRequestComposer({ request, onRespond, className }: PermissionRequestComposerProps) {
+export default function PermissionRequestComposer({
+  request,
+  onRespond,
+  allowAlways = false,
+  className
+}: PermissionRequestComposerProps) {
   const { t } = useTranslation()
   const [submittingApprovalId, setSubmittingApprovalId] = useState<string | null>(null)
   const [rejectionDraft, setRejectionDraft] = useState({ approvalId: request.approvalId, value: '' })
@@ -171,7 +185,7 @@ export default function PermissionRequestComposer({ request, onRespond, classNam
   const toolTitle = getToolGroupSemanticTitle(request.toolResponse, 'waiting', t)
 
   const respond = useCallback(
-    async (input: MessageToolApprovalInput, action: 'approve' | 'deny') => {
+    async (input: MessageToolApprovalInput, action: 'approve' | 'approve-always' | 'deny') => {
       const approvalId = request.approvalId
       setSubmittingApprovalId(approvalId)
       try {
@@ -196,6 +210,18 @@ export default function PermissionRequestComposer({ request, onRespond, classNam
         approved: true
       },
       'approve'
+    )
+  }, [isSubmitting, request.match, respond])
+
+  const approveAlways = useCallback(async () => {
+    if (isSubmitting) return
+    await respond(
+      {
+        match: request.match,
+        approved: true,
+        alwaysAllow: true
+      },
+      'approve-always'
     )
   }, [isSubmitting, request.match, respond])
 
@@ -278,6 +304,16 @@ export default function PermissionRequestComposer({ request, onRespond, classNam
               {hasRejectionReason ? 'Enter' : 'Esc'}
             </Kbd>
           </Button>
+          {allowAlways ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSubmitting}
+              title={t('agent.toolPermission.allowAlwaysHint')}
+              onClick={() => void approveAlways()}>
+              {t('agent.toolPermission.button.allowAlways')}
+            </Button>
+          ) : null}
           <Button type="button" variant="emphasis" disabled={isSubmitting} onClick={() => void approve()}>
             {t('agent.toolPermission.button.allow')}
             {!hasRejectionReason && (

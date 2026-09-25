@@ -11,6 +11,8 @@ export type DispatchDecision = {
   approved: boolean
   reason?: string
   updatedInput?: Record<string, unknown>
+  /** The user chose "Allow always": runtimes that support it skip future prompts for this tool. */
+  alwaysAllow?: boolean
 }
 
 type PendingApproval = {

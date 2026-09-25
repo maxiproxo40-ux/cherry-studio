@@ -18,13 +18,16 @@ type ToolApprovalComposerOverridesOptions = {
   persistedPartsByMessageId: Record<string, CherryMessagePart[]>
   streamingLayers?: MessageStreamingLayers
   onRespond: (input: MessageToolApprovalInput) => void | Promise<void>
+  /** Offer an "Allow always" button on permission prompts (agent sessions). */
+  allowAlways?: boolean
 }
 
 export function useToolApprovalComposerOverrides({
   partsByMessageId,
   persistedPartsByMessageId,
   streamingLayers,
-  onRespond
+  onRespond,
+  allowAlways = false
 }: ToolApprovalComposerOverridesOptions): readonly ComposerOverride[] {
   useEffect(() => {
     for (const parts of Object.values(persistedPartsByMessageId)) {
@@ -94,11 +97,12 @@ export function useToolApprovalComposerOverrides({
       overrides.push(
         createPermissionRequestComposerOverride({
           request: permissionRequest,
-          onRespond
+          onRespond,
+          allowAlways
         })
       )
     }
 
     return overrides
-  }, [askUserQuestionRequest, onRespond, permissionRequest])
+  }, [allowAlways, askUserQuestionRequest, onRespond, permissionRequest])
 }

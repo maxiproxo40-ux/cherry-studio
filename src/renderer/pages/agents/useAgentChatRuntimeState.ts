@@ -324,7 +324,7 @@ export function useAgentChatRuntimeState({
 
   const respondToolApproval = useCallback(
     async (input: MessageToolApprovalInput) => {
-      const { match, approved, reason, updatedInput } = input
+      const { match, approved, reason, updatedInput, alwaysAllow } = input
       const approvalId = match.approvalId
       const optimisticToolCallId = isAskUserQuestionApprovalResponse(input) ? match.toolCallId : undefined
 
@@ -342,6 +342,7 @@ export function useAgentChatRuntimeState({
           approved,
           reason,
           updatedInput,
+          ...(alwaysAllow && { alwaysAllow: true }),
           topicId: sessionTopicId,
           anchorId: match.messageId
         })
@@ -362,7 +363,8 @@ export function useAgentChatRuntimeState({
     partsByMessageId,
     persistedPartsByMessageId,
     streamingLayers,
-    onRespond: respondToolApproval
+    onRespond: respondToolApproval,
+    allowAlways: true
   })
   const { isPending } = useTopicStreamStatus(sessionTopicId)
   const editBusy = isPending || editPending || toolApprovalComposerOverrides.length > 0

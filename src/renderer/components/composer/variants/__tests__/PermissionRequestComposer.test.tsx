@@ -114,6 +114,26 @@ describe('PermissionRequestComposer', () => {
     })
   })
 
+  it('hides the Allow always button unless the surface opts in', () => {
+    render(<PermissionRequestComposer request={makeRequest()} onRespond={vi.fn()} />)
+
+    expect(screen.queryByRole('button', { name: 'agent.toolPermission.button.allowAlways' })).not.toBeInTheDocument()
+  })
+
+  it('submits an always-allow approval from the Allow always button', async () => {
+    const onRespond = vi.fn().mockResolvedValue(undefined)
+    render(<PermissionRequestComposer request={makeRequest()} onRespond={onRespond} allowAlways />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'agent.toolPermission.button.allowAlways' }))
+
+    await waitFor(() => expect(onRespond).toHaveBeenCalledTimes(1))
+    expect(onRespond).toHaveBeenCalledWith({
+      match: makeRequest().match,
+      approved: true,
+      alwaysAllow: true
+    })
+  })
+
   it('submits a denial decision with the default deny reason', async () => {
     const onRespond = vi.fn().mockResolvedValue(undefined)
     render(<PermissionRequestComposer request={makeRequest()} onRespond={onRespond} />)

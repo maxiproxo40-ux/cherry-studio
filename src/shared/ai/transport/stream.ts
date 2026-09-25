@@ -237,6 +237,8 @@ export interface ApprovalDecision {
 }
 
 export interface AiToolApprovalRespondRequest extends ApprovalDecision {
+  /** Approve this tool for the rest of the agent session (runtimes that support it; else a plain allow). */
+  alwaysAllow?: boolean
   topicId?: string
   anchorId?: string
 }
