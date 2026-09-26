@@ -97,6 +97,9 @@ export interface ComposerQueuedMessagePayload {
   attachments?: Array<Record<string, unknown>>
   /** Models selected by the composer model selector for this queued draft. */
   mentionedModels?: UniqueModelId[]
+  /** Agent-session queues: the agent model selected when the draft was queued. The agent is switched
+   *  back to it before the draft is sent, so each queued task runs on the model chosen for it. */
+  agentModelId?: UniqueModelId
   /** Canonical reasoning selection captured with this queued draft. */
   reasoningEffort?: ReasoningEffortOption
   /** Canonical provider request tier captured with this queued draft. */

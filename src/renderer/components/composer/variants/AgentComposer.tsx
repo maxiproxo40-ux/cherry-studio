@@ -1446,7 +1446,8 @@ const AgentComposerInner = ({
         extra: () => ({
           reasoningEffort: model ? resolveSupportedReasoningEffort(model, reasoningEffort) : reasoningEffort,
           serviceTier: model ? resolveSupportedServiceTier(model, serviceTier) : serviceTier,
-          ...(fastMode && model?.supportsFastMode === true ? { fastMode: true } : {})
+          ...(fastMode && model?.supportsFastMode === true ? { fastMode: true } : {}),
+          ...(model ? { agentModelId: model.id } : {})
         })
       })
       if (!payload) return null
@@ -1466,6 +1467,15 @@ const AgentComposerInner = ({
   const sendQueuedPayload = useCallback(
     async (payload: ComposerQueuedMessagePayload) => {
       try {
+        // Run each queued task on the model chosen when it was queued. Only between turns: a payload
+        // sent while the agent streams is steered into the live turn, which keeps its model.
+        if (!isStreaming && agent && payload.agentModelId && payload.agentModelId !== agent.model) {
+          const updatedAgent = await updateModel(
+            { agentId: agent.id, modelId: payload.agentModelId },
+            { showSuccessToast: false }
+          )
+          if (!updatedAgent) return false
+        }
         const attachments = (payload.attachments as ComposerAttachment[] | undefined) ?? []
         const originals = launchOptions?.initialParts?.filter((part): part is FileUIPart => part.type === 'file') ?? []
         const retainedParts = attachments.map((attachment) => {
@@ -1504,14 +1514,17 @@ const AgentComposerInner = ({
     },
     [
       accessiblePaths,
+      agent,
       agentId,
       chatSendMessage,
       initialDraft.files,
+      isStreaming,
       launchOptions,
       saveHistory,
       sessionId,
       sessionTopicId,
-      t
+      t,
+      updateModel
     ]
   )
 

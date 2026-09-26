@@ -4705,6 +4705,79 @@ describe('AgentComposer', () => {
     expect(mocks.markTopicSeen).toHaveBeenCalledTimes(1)
   })
 
+  it('switches the agent back to the model a queued follow-up was queued with before sending it', async () => {
+    const flash = { ...model, id: 'zai::glm-flash' } as Model
+    const full = { ...model, id: 'zai::glm' } as Model
+    const agentOn = (modelId: string) => ({ ...createControlledAgent(), model: modelId }) as any
+    const props = (isStreaming: boolean, current: Model) => ({
+      agentId: 'agent-1',
+      sessionId: 'session-1',
+      sendMessage: mocks.sendMessage,
+      stop: mocks.stop,
+      isStreaming,
+      resolvedAgent: agentOn(current.id),
+      resolvedModel: current
+    })
+    const { rerender } = render(<AgentComposer {...props(true, flash)} />)
+
+    fireEvent.click(screen.getByText('send'))
+    expect(mocks.sendMessage).not.toHaveBeenCalled()
+
+    // The user switched the agent to another model before the queued follow-up drains.
+    mocks.topicFulfilled = true
+    rerender(<AgentComposer {...props(false, full)} />)
+
+    await waitFor(() => expect(mocks.sendMessage).toHaveBeenCalledTimes(1))
+    expect(mocks.updateModel).toHaveBeenCalledWith(
+      { agentId: 'agent-1', modelId: flash.id },
+      { showSuccessToast: false }
+    )
+    expect(mocks.updateModel.mock.invocationCallOrder[0]).toBeLessThan(mocks.sendMessage.mock.invocationCallOrder[0])
+  })
+
+  it('does not switch models when a queued follow-up drains on the model it was queued with', async () => {
+    const props = (isStreaming: boolean) => ({
+      agentId: 'agent-1',
+      sessionId: 'session-1',
+      sendMessage: mocks.sendMessage,
+      stop: mocks.stop,
+      isStreaming,
+      resolvedAgent: { ...createControlledAgent(), model: model.id } as any,
+      resolvedModel: model
+    })
+    const { rerender } = render(<AgentComposer {...props(true)} />)
+
+    fireEvent.click(screen.getByText('send'))
+    mocks.topicFulfilled = true
+    rerender(<AgentComposer {...props(false)} />)
+
+    await waitFor(() => expect(mocks.sendMessage).toHaveBeenCalledTimes(1))
+    expect(mocks.updateModel).not.toHaveBeenCalled()
+  })
+
+  it('does not send a queued follow-up when switching back to its model fails', async () => {
+    mocks.updateModel.mockResolvedValue(undefined)
+    const flash = { ...model, id: 'zai::glm-flash' } as Model
+    const props = (isStreaming: boolean, current: Model) => ({
+      agentId: 'agent-1',
+      sessionId: 'session-1',
+      sendMessage: mocks.sendMessage,
+      stop: mocks.stop,
+      isStreaming,
+      resolvedAgent: { ...createControlledAgent(), model: current.id } as any,
+      resolvedModel: current
+    })
+    const { rerender } = render(<AgentComposer {...props(true, flash)} />)
+
+    fireEvent.click(screen.getByText('send'))
+    mocks.topicFulfilled = true
+    rerender(<AgentComposer {...props(false, model)} />)
+
+    await waitFor(() => expect(mocks.updateModel).toHaveBeenCalledTimes(1))
+    expect(mocks.sendMessage).not.toHaveBeenCalled()
+    expect(getQueueDock()).toBeTruthy()
+  })
+
   it('atomically restores same-text queued tokens and the skill cache from a history preview', async () => {
     seedInputHistory(['queued agent draft'])
     mocks.availableSkills = [pdfSkill]
